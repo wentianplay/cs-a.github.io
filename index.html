@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>文天玩新手网络攻防模拟</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #fff;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 20px;
+        }
+
+        .attack-panel, .defense-panel, .stats-panel {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        .simulator-view {
+            background: #333;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        button {
+            background: #d9534f;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: #c9302c;
+        }
+
+        .log-container {
+            height: 400px;
+            overflow-y: auto;
+            background: #000;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #d9534f;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #444;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+
+        .progress {
+            height: 100%;
+            background: #5bc0de;
+            border-radius: 10px;
+            transition: width 0.3s;
+        }
+
+        /* 新增样式 */
+        @keyframes attackFlash {
+            0% { background-color: inherit; }
+            50% { background-color: #ff4444; }
+            100% { background-color: inherit; }
+        }
+        
+        .attack-effect {
+            animation: attackFlash 0.5s linear;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            border-bottom: 1px dotted #fff;
+            cursor: help;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background: #333;
+            color: #fff;
+            text-align: center;
+            padding: 5px;
+            border-radius: 6px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+        }
+
+        .defense-active {
+            border: 2px solid #5bc0de;
+            box-shadow: 0 0 10px #5bc0de;
+        }
+
+        .stats-panel {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>文天玩 新手网络攻防模拟</h1>
+    
+    <div class="container">
+        <div class="attack-panel">
+            <h2>攻击选项 <span class="tooltip">(?)
+                <span class="tooltiptext">选择要模拟的攻击类型，观察不同防御措施的效果</span>
+            </span></h2>
+            <button onclick="startAttack('ddos')">模拟DDoS攻击</button>
+            <button onclick="startAttack('bruteforce')">密码爆破攻击</button>
+            <button onclick="startAttack('sql')">SQL注入攻击</button>
+            <button onclick="startAttack('phishing')">钓鱼攻击</button>
+            <button onclick="startAttack('xss')">XSS跨站脚本攻击</button>
+            <button onclick="startAttack('malware')">恶意软件传播</button>
+            
+            <div id="resourcePanel" style="margin-top:15px">
+                攻击资源: <span id="resources">100</span>%
+                <div class="progress-bar" style="height:10px">
+                    <div class="progress" style="width:100%;background:#4CAF50"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="simulator-view">
+            <h2>模拟器状态</h2>
+            <div id="progressBar" class="progress-bar">
+                <div class="progress" style="width: 0%"></div>
+            </div>
+            <h3>实时日志：</h3>
+            <div class="log-container" id="logContainer"></div>
+        </div>
+
+        <div class="defense-panel">
+            <h2>防御设置 <span class="tooltip">(?)
+                <span class="tooltiptext">启用/禁用防御措施来观察防护效果</span>
+            </span></h2>
+            <label><input type="checkbox" id="firewall"> 启用防火墙</label><br>
+            <label><input type="checkbox" id="captcha"> 启用验证码</label><br>
+            <label><input type="checkbox" id="waf"> 启用WAF</label><br>
+            <label><input type="checkbox" id="ids"> 入侵检测系统</label><br>
+            <label><input type="checkbox" id="2fa"> 双因素认证</label>
+            <h3>防御状态：</h3>
+            <div id="defenseStatus"></div>
+        </div>
+    </div>
+
+    <div class="stats-panel">
+        <h3>攻防统计</h3>
+        <div>总攻击次数: <span id="totalAttacks">0</span></div>
+        <div>攻击成功率: <span id="successRate">0</span>%</div>
+        <div>当前威胁级别: <span id="threatLevel">低</span></div>
+    </div>
+
+    <script>
+        let isAttacking = false;
+        const attackData = {
+            ddos: { name: "DDoS攻击", duration: 5000 },
+            bruteforce: { name: "密码爆破", duration: 3000 },
+            sql: { name: "SQL注入", duration: 4000 },
+            phishing: { name: "钓鱼攻击", duration: 3500 },
+            xss: { name: "XSS攻击", duration: 2500 },
+            malware: { name: "恶意软件", duration: 4000 }
+        };
+
+        let stats = {
+            totalAttacks: 0,
+            successfulAttacks: 0,
+            resources: 100
+        };
+
+        function log(message, type = "info") {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            document.getElementById('logContainer').appendChild(logEntry);
+            logEntry.scrollIntoView();
+        }
+
+        function updateProgress(percentage) {
+            document.querySelector('.progress').style.width = percentage + '%';
+        }
+
+        function playSound(type) {
+            if(typeof Audio !== 'undefined') {
+                const sounds = {
+                    warning: 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg',
+                    success: 'https://actions.google.com/sounds/v1/ui/success.ogg',
+                    danger: 'https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg'
+                };
+                new Audio(sounds[type]).play().catch(() => {});
+            }
+        }
+
+        function startAttack(type) {
+            if(isAttacking || stats.resources < 20) return;
+            
+            stats.totalAttacks++;
+            stats.resources -= 20;
+            updateStats();
+            
+            isAttacking = true;
+            document.body.classList.add('attack-effect');
+            setTimeout(() => document.body.classList.remove('attack-effect'), 500);
+            
+            playSound('warning');
+            const attack = attackData[type];
+            log(`🚨 开始${attack.name}...`, "warning");
+            
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 1;
+                updateProgress(progress);
+                
+                if(progress >= 100) {
+                    clearInterval(interval);
+                    isAttacking = false;
+                    showAttackResult(type);
+                }
+            }, attack.duration / 100);
+        }
+
+        function showAttackResult(type) {
+            const defenses = {
+                firewall: document.getElementById('firewall').checked,
+                captcha: document.getElementById('captcha').checked,
+                waf: document.getElementById('waf').checked,
+                ids: document.getElementById('ids').checked,
+                twoFA: document.getElementById('2fa').checked
+            };
+
+            let result = "";
+            switch(type) {
+                case 'ddos':
+                    result = defenses.firewall ? 
+                    "🔥 防火墙成功阻挡DDoS攻击！" : 
+                    "💥 DDoS攻击成功！服务器瘫痪";
+                    break;
+                case 'bruteforce':
+                    result = defenses.captcha ? 
+                    "🔐 验证码阻止了暴力破解！" : 
+                    "🔓 密码破解成功！获得管理员权限";
+                    break;
+                case 'sql':
+                    result = defenses.waf ? 
+                    "🛡️ WAF拦截SQL注入攻击！" : 
+                    "💾 数据库被成功注入！数据泄露";
+                    break;
+                case 'phishing':
+                    result = "🎣 用户点击了钓鱼链接！" + 
+                    (defenses.twoFA ? "但双因素认证保护了账户" : "账户凭据被盗");
+                    break;
+                case 'xss':
+                    result = defenses.waf ? 
+                    "🛡️ WAF拦截XSS攻击！" : 
+                    "📜 XSS攻击成功！窃取用户Cookie";
+                    break;
+                case 'malware':
+                    result = defenses.ids ? 
+                    "🚫 IDS检测到恶意软件！" : 
+                    "🦠 恶意软件植入成功！系统感染";
+                    break;
+            }
+
+            if(result.includes("成功")) stats.successfulAttacks++;
+            updateStats();
+            log(result, result.includes("成功") ? "danger" : "success");
+            updateDefenseStatus();
+        }
+
+        function updateStats() {
+            document.getElementById('resources').textContent = stats.resources;
+            document.querySelector('#resourcePanel .progress').style.width = stats.resources + '%';
+            
+            const successRate = stats.totalAttacks > 0 ? 
+                Math.round((stats.successfulAttacks / stats.totalAttacks) * 100) : 0;
+            document.getElementById('successRate').textContent = successRate;
+            
+            document.getElementById('threatLevel').textContent = 
+                successRate > 70 ? '极高' :
+                successRate > 40 ? '高' :
+                successRate > 20 ? '中' : '低';
+        }
+
+        function updateDefenseStatus() {
+            const statusElement = document.getElementById('defenseStatus');
+            statusElement.innerHTML = `
+                ${document.getElementById('firewall').checked ? '🛡️ 防火墙已启用' : '❌ 防火墙未启用'} <br>
+                ${document.getElementById('captcha').checked ? '✅ 验证码已启用' : '❌ 验证码未启用'} <br>
+                ${document.getElementById('waf').checked ? '🔒 WAF运行中' : '❌ WAF未启用'} <br>
+                ${document.getElementById('ids').checked ? '🚨 IDS监控中' : '❌ IDS未启用'} <br>
+                ${document.getElementById('2fa').checked ? '🔑 双因素认证启用' : '❌ 双因素认证关闭'}
+            `;
+        }
+
+        // 自动恢复资源
+        setInterval(() => {
+            if(stats.resources < 100 && !isAttacking) {
+                stats.resources = Math.min(stats.resources + 0.5, 100);
+                updateStats();
+            }
+        }, 1000);
+
+        // 配置持久化
+        function saveConfig() {
+            const config = {
+                firewall: document.getElementById('firewall').checked,
+                captcha: document.getElementById('captcha').checked,
+                waf: document.getElementById('waf').checked,
+                ids: document.getElementById('ids').checked,
+                twoFA: document.getElementById('2fa').checked
+            };
+            localStorage.setItem('defenseConfig', JSON.stringify(config));
+        }
+
+        window.addEventListener('load', () => {
+            const savedConfig = localStorage.getItem('defenseConfig');
+            if(savedConfig) {
+                const config = JSON.parse(savedConfig);
+                Object.keys(config).forEach(key => {
+                    document.getElementById(key).checked = config[key];
+                });
+                updateDefenseStatus();
+            }
+            log("欢迎来到网络攻防模拟器！请选择攻击方式并观察防御效果");
+        });
+
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                updateDefenseStatus();
+                saveConfig();
+            });
+        });
+    </script>
+</body>
+</html>
